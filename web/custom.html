@@ -1,0 +1,163 @@
+<html>
+  <head>
+    <title>gather-stats viewer</title>
+    <script src="//ajax.googleapis.com/ajax/libs/mootools/1.4.5/mootools-yui-compressed.js"></script>
+    <script src="//code.highcharts.com/adapters/mootools-adapter.js"></script>
+    <script src="//code.highcharts.com/highcharts.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.2/moment.min.js"></script>
+    <script src="./src/MvtDatasource.js"></script>
+    <script src="./src/DatasourceFactory.js"></script>
+    <script src="./src/SeriesBuilder.js"></script>
+    <script src="./src/SeriesBucket.js"></script>
+    <script src="./src/SeriesRef.js"></script>
+    <script src="./src/SeriesSynchronousTransform.js"></script>
+    <script src="./src/HighchartsGraph.js"></script>
+    <script src="./src/functions.js"></script>
+    
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css">
+  </head>
+  <body>
+    <div id="graphed" style="height:420px;"></div>
+    
+    <label for="graphit" style="padding-left:8px;">Graph Definition (cmd+enter to redraw):</label>
+    <textarea id="graphit" rows="12" style="background-color:#F0F0F0;border:0;padding:8px;width:100%;"># first line is optional and allows you to customize the Highcharts options
+{"title":{"text":"CPU"},"yAxis":[{"title":{"enabled":false}}]}
+
+# subsequent lines are for the series you want to add
+stacked(alias(aggregateLine(series(/host\.cpu_\d+\.cpu_idle/), 'sum'), 'Idle'))
+stacked(alias(aggregateLine(series(/host\.cpu_\d+\.cpu_interrupt/), 'sum'), 'Interrupt'))
+stacked(alias(aggregateLine(series(/host\.cpu_\d+\.cpu_nice/), 'sum'), 'Nice'))
+stacked(alias(aggregateLine(series(/host\.cpu_\d+\.cpu_softirq/), 'sum'), 'IRQ (soft)'))
+stacked(alias(aggregateLine(series(/host\.cpu_\d+\.cpu_steal/), 'sum'), 'Steal'))
+stacked(alias(aggregateLine(series(/host\.cpu_\d+\.cpu_system/), 'sum'), 'System'))
+stacked(alias(aggregateLine(series(/host\.cpu_\d+\.cpu_user/), 'sum'), 'User'))
+stacked(alias(aggregateLine(series(/host\.cpu_\d+\.cpu_wait/), 'sum'), 'Wait'))</textarea>
+
+    <div class="row">
+      <div class="col-md-5">
+        <div style="font-family:monospace;padding:6px;">
+          <div>Available Functions:</div>
+          <div id="commandsdoc"></div>
+        </div>
+      </div>
+      
+      <div class="col-md-7">
+        <div style="font-family:monospace;padding:6px;">
+          <div>Available Series:</div>
+          <div id="seriesdoc"><a href="#">Enumerate&hellip;</a></div>
+        </div>
+    </div>
+  </body>
+
+  <script>
+    if (1 < window.location.hash.length) {
+      var parts = window.location.hash.substring(1).split(';');
+      var sources = {};
+
+      parts.forEach(function (part) {
+        part = part.split(':');
+        
+        if (3 == part.length) {
+          if ('mvt' == part[0]) {
+            sources[part[1]] = new MvtDatasource(part[2], part[1] + '.');
+          }
+        } else {
+          sources['default'] = new MvtDatasource(part[0]);
+        }
+      });
+      
+      if (('default' in sources) && (1 == Object.keys(sources))) {
+        var datasource = sources.default;
+      } else {
+        var datasource = new DatasourceFactory(sources);
+      }
+    } else {
+      var datasource = new MvtDatasource('compare-flush-size/scenario3/trial1/metrics/elasticsearch-0.data');
+    }
+
+    var s = new SeriesBuilder(datasource);
+
+    var graphit = $('graphit');
+
+    graphit.addEvent(
+      'keydown',
+      function (e) {
+        if ((e.key != 'enter') || !e.meta) {
+          return;
+        }
+        
+        e.preventDefault();
+        
+        createGraphFromSyntax(s, 'graphed', this.value);
+      }
+    )
+    
+    createGraphFromSyntax(s, 'graphed', $('graphit').value);
+    
+    var seriesdoc = $('seriesdoc');
+    seriesdoc.getChildren().addEvent(
+      'click',
+      function (e) {
+        e.preventDefault();
+    
+        seriesdoc.empty();
+
+        datasource.listSeries().then(function (series) {
+          series.forEach(function (serie) {
+            seriesdoc.adopt(new Element('div').adopt(
+              new Element('a', { href : '#', text : serie })
+                .addEvent(
+                  'click',
+                  function (e) {
+                    e.preventDefault();
+                
+                    graphit.value = graphit.value + '\ns.series("' + serie + '")';
+                    graphit.fireEvent('keydown', { key : 'enter', meta : true, preventDefault : function () {} });
+                  }
+                )
+            ));
+          })
+        });
+      }
+    );
+
+    var commandsdoc = $('commandsdoc')
+    
+    for (var sub in s) {
+      if ('function' != typeof s[sub]) {
+        continue;
+      }
+
+      // http://stackoverflow.com/questions/6921588/is-it-possible-to-reflect-the-arguments-of-a-javascript-function
+      var sfs = s[sub].toString();
+      var args = sfs.match (/^\s*function\s+(?:\w*\s*)?\((.*?)\)/);
+      args = args ? (args[1] ? args[1].trim ().split (/\s*,\s*/) : []) : null;
+      
+      var html = '<strong>' + sub + '</strong>(';
+      var foundargs = 0;
+      
+      args.forEach(function (arg) {
+        foundargs += 1;
+        html += ((1 < foundargs) ? ', ' : '') + arg;
+        
+        var argdef = sfs.match(new RegExp('var ' + arg + ' = ' + arg + ' \\|\\| ([^;]+);'));
+        
+        if (argdef && argdef[1]) {
+          html += ' = ' + argdef[1];
+        }
+      })
+      
+      var splat = sfs.match(/var ([^\s]+) = Array\.prototype\.slice\.call\(arguments\);/);
+      
+      if (splat) {
+        html += ((1 < foundargs) ? ', ' : '') + '*' + splat[1];
+      }
+      
+      html += ')';
+      
+      commandsdoc.adopt(new Element('div', {
+        html : html
+      }));
+    }
+  </script>
+</html>

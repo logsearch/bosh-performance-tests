@@ -1,0 +1,47 @@
+#!/usr/bin/env ruby
+
+require 'yaml'
+require 'json'
+
+config = YAML.load File.read('config.yml')
+
+manifest = {
+  "scenario" => ENV['MVTS_SCENARIO'],
+  "trial" => ENV['MVTS_TRIAL'],
+  "timers" => {
+    "start" => ENV['MVTT_START'],
+    "stop" => ENV['MVTT_STOP'],
+  },
+  "steps" => [],
+  "variables" => config['variables'],
+  "jobs" => {},
+  "datasources" => [],
+  "metrics" => [],
+}
+
+ENV.each do | k, v |
+  match = k.match(/^MVTJ_(.+)_(\d+)_CID$/)
+  
+  if match
+    manifest['jobs'][match[1].downcase] ||= 0;
+    manifest['jobs'][match[1].downcase] += 1;
+  end
+end
+
+config['steps'].each_with_index do | step, stepIdx |
+  manifest['steps'][stepIdx.to_i] = {
+    "step" => step,
+    "start" => ENV["MVTT_STEP#{stepIdx}_START"],
+    "stop" => ENV["MVTT_STEP#{stepIdx}_STOP"],
+  }
+end
+
+Dir.glob('metrics/*.data').each do | metrics |
+  manifest['datasources'].push File.basename(metrics, '.data')
+
+  File.read(metrics).scan(/^([^\s]+)\s/).each do | metric |
+    manifest['metrics'].push metric[0]
+  end
+end
+
+File.write('manifest.json', JSON.generate(manifest))

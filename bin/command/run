@@ -1,0 +1,45 @@
+#!/usr/bin/env ruby
+
+require 'yaml'
+require 'shellwords'
+
+config = YAML.load File.read("config.yml")
+
+File.rename 'bosh.yml', 'bosh.pre-erb.yml'
+
+File.write('bosh.yml', `set -e ; for ENV in ./env/* ; do source $ENV; done && erb bosh.pre-erb.yml`)
+
+config['steps'].each_with_index do | v, idx |
+  keys = v.keys
+  context = keys[0]
+  
+  cmd = "./bin/"
+
+  if 'custom' == context
+    cmd += "#{v['custom']}"
+  else
+    cmd += "#{context}/#{v[context]}"
+  end
+  
+  if v.has_key? 'args'
+    if v['args'].class == Array
+      cmd += v['args'].map { |arg| Shellwords.escape(arg) }.join(' ')
+    else
+      cmd += " #{Shellwords.escape(v['args'])}"
+    end
+  end
+
+  $stdout.write "====> [#{Time.now.utc.strftime('%FT%TZ')}] #{cmd}\n"
+
+  system "./bin/util/timer-mark STEP#{idx}_START"
+
+  system "set -e ; for ENV in ./env/* ; do source $ENV; done && #{cmd}"
+
+  system "./bin/util/timer-mark STEP#{idx}_STOP"
+
+  if 0 < $?.to_i
+    exit $?.to_i
+  end
+  
+  $stdout.write "\n\n"
+end

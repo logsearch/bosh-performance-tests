@@ -1,0 +1,14 @@
+#
+# We specify our BOSH environment variables here, along with the VCAP variables used for directly logging into the jobs.
+#
+
+export BOSH_CONFIG=~/our-test-directory/.bosh_config
+export BOSH_DIRECTOR_UUID=d9279abd-2484-4d58-9fe7-e8e4709618a5
+export VCAP_SSHKEY=~/.ssh/id_rsa
+export VCAP_PASS=c1oudc0w
+
+#
+# we also load up our existing AWS environment variables so we can download/sign the archived files
+#
+
+. ~/.aws-test-creds

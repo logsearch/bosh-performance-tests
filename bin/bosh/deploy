@@ -1,0 +1,14 @@
+#!/bin/bash
+
+#
+# create the bosh deployment
+#
+
+set -e
+set -u
+
+[ -e bosh.pre-logsearch.yml ] || ./bin/logsearch/append-manifest
+
+bosh -c "${BOSH_CONFIG:-.bosh_config}" -d bosh.yml -n deploy
+
+./bin/bosh/vms-env

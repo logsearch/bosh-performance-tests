@@ -1,0 +1,10 @@
+#!/bin/bash
+
+#
+# destroy the bosh deployment
+#
+
+set -e
+set -u
+
+bosh -c "${BOSH_CONFIG:-.bosh_config}" -d bosh.yml -n delete deployment "${MVTS_BOSH_DEPLOYMENT_NAME}"

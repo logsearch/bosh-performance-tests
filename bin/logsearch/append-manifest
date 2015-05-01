@@ -1,0 +1,32 @@
+#!/usr/bin/env ruby
+
+#
+# patch the deployment manifest with the logsearch properties
+#
+
+require 'yaml'
+
+File.rename 'bosh.yml', 'bosh.pre-logsearch.yml'
+
+manifest = YAML.load File.read('bosh.pre-logsearch.yml')
+
+manifest['releases'] << {
+    'name' => 'logsearch-shipper',
+    'version' => ARGV[0] || 'latest'
+}
+
+manifest['jobs'].each do | job |
+    job['templates'] << {
+        'release' => 'logsearch-shipper',
+        'name' => 'logsearch-shipper',
+    }
+end
+
+manifest['properties']['logsearch'] ||= {}
+manifest['properties']['logsearch']['logs'] ||= {}
+manifest['properties']['logsearch']['logs']['server'] ||= ENV['MVTS_LOGSEARCH_INGESTOR']
+manifest['properties']['logsearch']['logs']['ssl_ca_certificate'] ||= ENV['MVTS_LOGSEARCH_SSL_CA_CERTIFICATE']
+manifest['properties']['logsearch']['metrics'] ||= {}
+manifest['properties']['logsearch']['metrics']['frequency'] ||= 30
+
+YAML.dump manifest, File.open('bosh.yml', 'w')

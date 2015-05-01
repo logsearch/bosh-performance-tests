@@ -1,0 +1,52 @@
+#!/bin/bash
+
+set -e
+set -u
+
+for INSTANCE_PAIR in $( env | grep -e '^MVTJ_.*_CID=' ) ; do
+  IFS='=' read -ra INSTANCE_PAIRA <<< "$INSTANCE_PAIR"
+  INSTANCE_ENVNAME="${INSTANCE_PAIRA[0]}"
+  INSTANCE_ID="${INSTANCE_PAIRA[1]}"
+  
+  METRIC_SCOPE=$( echo "${INSTANCE_ENVNAME}" | sed -E 's/^MVTJ_//;s/_CID$//;s/_([0-9]+)/-\1/' | tr '[:upper:]' '[:lower:]' )
+  
+  echo -n "${INSTANCE_ID}[${METRIC_SCOPE}]"
+
+  for METRIC_NAME in CPUUtilization DiskReadBytes DiskReadOps DiskWriteBytes DiskWriteOps NetworkIn NetworkOut ; do
+    echo -n " -> ${METRIC_NAME}"
+
+    aws cloudwatch get-metric-statistics \
+      --namespace "AWS/EC2" \
+      --dimensions "{\"Name\":\"InstanceId\",\"Value\":\"$INSTANCE_ID\"}" \
+      --metric-name "${METRIC_NAME}" \
+      --start-time "${MVTT_START}" \
+      --end-time "${MVTT_STOP}" \
+      --period 60 \
+      --statistics "[\"Average\",\"Sum\",\"SampleCount\",\"Maximum\",\"Minimum\"]" \
+        | ./bin/aws/metrics-cloudwatch-implode "aws.instance.${METRIC_NAME}" \
+        >> "metrics/${METRIC_SCOPE}.data"
+  done
+
+  ( aws ec2 describe-volumes --query 'Volumes[*].[VolumeId,Attachments[0].Device]' --output text --filter Name="attachment.instance-id",Values=${INSTANCE_ID} | uniq ) | while read VOLUME_PAIR ; do
+    IFS='	' read -ra VOLUME_PAIRA <<< "$VOLUME_PAIR"
+    VOLUME_ID="${VOLUME_PAIRA[0]}"
+    VOLUME_MOUNT=$( basename "${VOLUME_PAIRA[1]}" )
+  
+    for METRIC_NAME in VolumeIdleTime VolumeQueueLength VolumeReadBytes VolumeReadOps VolumeTotalReadTime VolumeTotalWriteTime VolumeWriteBytes VolumeWriteOps ; do
+      echo -n " -> ${VOLUME_ID}[${VOLUME_MOUNT}]:${METRIC_NAME}"
+
+      aws cloudwatch get-metric-statistics \
+        --namespace "AWS/EBS" \
+        --dimensions "{\"Name\":\"VolumeId\",\"Value\":\"$VOLUME_ID\"}" \
+        --metric-name "${METRIC_NAME}" \
+        --start-time "${MVTT_START}" \
+        --end-time "${MVTT_STOP}" \
+        --period 60 \
+        --statistics "[\"Average\",\"Sum\",\"SampleCount\",\"Maximum\",\"Minimum\"]" \
+          | ./bin/aws/metrics-cloudwatch-implode "aws.volume.${VOLUME_MOUNT}.${METRIC_NAME}" \
+          >> "metrics/${METRIC_SCOPE}.data"
+    done
+  done
+  
+  echo ""
+done

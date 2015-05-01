@@ -1,0 +1,258 @@
+<html>
+  <head>
+    <title>gather-stats viewer</title>
+    <script src="//ajax.googleapis.com/ajax/libs/mootools/1.4.5/mootools-yui-compressed.js"></script>
+    <script src="//code.highcharts.com/adapters/mootools-adapter.js"></script>
+    <script src="//code.highcharts.com/highcharts.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.2/moment.min.js"></script>
+    <script src="./src/MvtDatasource.js"></script>
+    <script src="./src/DatasourceFactory.js"></script>
+    <script src="./src/SeriesBuilder.js"></script>
+    <script src="./src/SeriesBucket.js"></script>
+    <script src="./src/SeriesRef.js"></script>
+    <script src="./src/SeriesSynchronousTransform.js"></script>
+    <script src="./src/HighchartsGraph.js"></script>
+    <script src="./src/functions.js"></script>
+    
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css">
+    
+    <style type="text/css">
+      .graphit {
+        height: 343px;
+        margin-bottom: 30px;
+      }
+      
+      .graphit pre {
+        font-size: 11px;
+        height: 343px;
+        overflow: hidden;
+        white-space: pre;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="page-header">
+        <div style="float:right;">
+          <select id="aggfunc">
+            <option value="avg">avg</option>
+            <option value="sum">sum</option>
+            <option value="min">min</option>
+            <option value="max">max</option>
+          </select>
+        </div>
+        <select id="simplejobs"><option>Loading&hellip;</option></select><!--
+        --><div style="display:inline-block;margin:0 15px;">
+          <select id="simplemetrics"><option>Loading&hellip;</option></select>
+        </div><!--
+        --><div style="display:inline-block;margin:0 15px;">
+          <select id="summarize">
+            <option value="30s">30s</option>
+            <option value="1m">1m</option>
+            <option value="5m">5m</option>
+            <option value="15m">15m</option>
+            <option value="1h">1h</option>
+          </select>
+          <select id="summarizefunc">
+            <option value="avg">avg</option>
+            <option value="sum">sum</option>
+            <option value="min">min</option>
+            <option value="max">max</option>
+          </select>
+        </div><!--
+        --><div style="display:inline-block;margin:0 15px;">
+          <input id="derivative" type="checkbox" />
+          <label for="derivative">derivative</label>
+        </div>
+      </div>
+
+      <div id="graphed" style="height:420px;"></div>
+      
+      <div id="scenarios"></div>
+    </div>
+  </body>
+
+  <script>
+    if (1 < window.location.hash.length) {
+      var base = window.location.hash.substring(1);
+    } else {
+      var base = 'compare-flush-size';
+    }
+
+    var scenarios = $('scenarios');
+
+    var config = {};
+
+    var knownmetrics = {};
+    var knownjobs = {};
+    var knownscenarios = {};
+    var manifests = [];
+    var sources = [];
+    var scenariographs = {};
+    
+    new Request.JSON({
+      url : base + '/manifest.json',
+      async : false,
+      method : 'get',
+      onSuccess : function (test) {
+        config = {
+          startMin : 99999999999,
+          stopMax : 0,
+          durationMax : 0,
+          scenarios : test.scenarios,
+          trials : test.trials
+        };
+
+        for (var scenario = 1; scenario <= test.scenarios; scenario += 1) {
+          config['s' + scenario] = {};
+          config['s' + scenario].dom = {};
+          config['s' + scenario].dom.min = new Element('div.col-md-4', { style : 'height:160px;' });
+          config['s' + scenario].dom.avg = new Element('div.col-md-4', { style : 'height:160px;' });
+          config['s' + scenario].dom.max = new Element('div.col-md-4', { style : 'height:160px;' });
+          scenarios.adopt(new Element('div.row').adopt(config['s' + scenario].dom.min, config['s' + scenario].dom.avg, config['s' + scenario].dom.max));
+
+          for (var trial = 1; trial <= config.trials; trial += 1) {
+            new Request.JSON({
+              url : base + '/scenario' + scenario + '/trial' + trial + '/manifest.json',
+              async : false,
+              method : 'get',
+              onSuccess : function (json) {
+                json.metrics.forEach(function (v) {
+                  knownmetrics[v] = true;
+                });
+
+                Object.each(
+                  json.jobs,
+                  function (jobcount, jobname) {
+                    knownjobs[jobname] = true;
+
+                    for (var jobindex = 0; jobindex < jobcount; jobindex += 1) {
+                      var context = 's' + scenario + '.' + 't' + trial + '.' + jobname + '-' + jobindex;
+                      sources[context] = new MvtDatasource(base + '/scenario' + scenario + '/trial' + trial + '/metrics/' + jobname + '-' + jobindex + '.data', context + '.');
+                    }
+                  }
+                );
+            
+                config['s' + scenario]['t' + trial] = {};
+                config['s' + scenario]['t' + trial].manifest = json;
+                
+                var timerStart = moment(json.timers['start']).utc().unix();
+
+                config.startMin = Math.min(config.startMin, timerStart);
+                config.durationMax = Math.max(config.durationMax, moment(json.timers['stop']).utc().unix() - timerStart);
+              }
+            }).send();
+          }
+        }
+
+        var startoffset = moment.unix(config.startMin).utc();
+        config.startMidnight = config.startMin - (startoffset.hour() * 3600) - (startoffset.minute() * 60) - startoffset.second();
+
+        for (var scenario = 1; scenario <= test.scenarios; scenario += 1) {
+          for (var trial = 1; trial <= config.trials; trial += 1) {
+            config['s' + scenario]['t' + trial].offset = (moment(config['s' + scenario]['t' + trial].manifest.timers['start']).utc().unix() - config.startMidnight) + 's';
+          }
+        }
+      }
+    }).send();
+
+    var s = new SeriesBuilder(new DatasourceFactory(sources));
+    
+    var simplejobs = $('simplejobs').addEvent('change', reloadgraph);
+    var simplemetrics = $('simplemetrics').addEvent('change', reloadgraph);
+    var aggfunc = $('aggfunc').addEvent('change', function () {reloadgraph(false);});
+    var summarize = $('summarize').addEvent('change', reloadgraph);
+    var summarizefunc = $('summarizefunc').addEvent('change', reloadgraph);
+    var derivative = $('derivative').addEvent('change', reloadgraph);
+    
+   // Highcharts.setOptions({global : { useUTC : false } });
+    
+    function reloadgraph(onlydefault) {
+      var markup = '{"title":{"text":null},"legend":{"verticalAlign":"top"},"tooltip":{"xDateFormat":"%H:%M"},"xAxis":{"ceiling":' + ((config.startMidnight + config.durationMax) * 1000) + ',"floor":' + (config.startMidnight * 1000) + '},"yAxis":{"title":{"enabled":false}}}\n';
+
+      var hccolors = Highcharts.getOptions().colors;
+
+      for (var scenario = 1; scenario <= config.scenarios; scenario += 1) {
+        var scenariocolor = hccolors[scenario % hccolors.length];
+
+        Object.each(
+          {
+            'default' : aggfunc.value,
+            'Minimum' : 'min',
+            'Average' : 'avg',
+            'Maximum' : 'max'
+          },
+          function (aggv, aggk) {
+            var tm = [];
+
+            for (var trial = 1; trial <= config.trials; trial += 1) {
+              var m = 'series("s' + scenario + '.t' + trial + '.' + (simplejobs.value ? (simplejobs.value + '-*') : '*') + '.' + simplemetrics.value + '")';
+              m = 'timeShift(' + m + ', $.s' + scenario + '.t' + trial + '.offset)';
+              m = 'summarize(' + m + ', "' + summarize.value + '", "' + summarizefunc.value + '")';
+              
+              tm.push(m);
+            }
+
+            var m = 1 != tm.length ? ('group(' + tm.join(', ') + ')') : tm;
+
+            if (derivative.checked) {
+              m = 'derivative(' + m + ')';
+            }
+        
+            m = 'color(' + m + ', "' + scenariocolor + '")';
+        
+            if ('default' == aggk) {
+              m = 'aggregateLine(' + m + ', "' + aggv + '")';
+              m = 'alias(' + m + ', "Scenario ' + scenario + '")';
+
+              markup += m + '\n';
+            } else if (false !== onlydefault) {
+              m = tm.map(function (m, idx) {
+                if (derivative.checked) {
+                  m = 'derivative(' + m + ')';
+                }
+
+                m = 'aggregateLine(' + m + ', "' + aggv + '")';
+                m = 'color(' + m + ', "' + scenariocolor + '")';
+                m = 'alias(' + m + ', "Trial ' + (1 + idx) + '")';
+                
+                return m;
+              }).join('\n');
+
+              createGraphFromSyntax(
+                s,
+                config['s' + scenario].dom[aggv],
+                '{"title":{"text":null},"legend":{"enabled":false},"tooltip":{"xDateFormat":"%H:%M"},"xAxis":{"ceiling":' + ((config.startMidnight + config.durationMax) * 1000) + ',"floor":' + (config.startMidnight * 1000) + ',"title":{"enabled":false}},"yAxis":{"title":{"text":"' + aggk + '"}}}\n' + m,
+                config
+              );
+            }
+          }
+        );
+      }
+
+      createGraphFromSyntax(
+        s,
+        'graphed',
+        markup,
+        config
+      );
+    }
+
+    simplejobs.empty();
+
+    Object.keys(knownjobs).sort().forEach(function (job) {
+      simplejobs.adopt(new Element('option', { text : job }));
+    });
+    
+    simplemetrics.empty();
+
+    Object.keys(knownmetrics).sort().forEach(function (metric) {
+      simplemetrics.adopt(new Element('option', { text : metric }));
+    });
+    
+    simplejobs.value = 'elasticsearch';
+    simplemetrics.value = 'host.load.load.shortterm';
+
+    reloadgraph();
+  </script>
+</html>

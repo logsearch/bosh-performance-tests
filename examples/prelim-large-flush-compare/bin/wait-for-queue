@@ -1,0 +1,18 @@
+#!/bin/bash
+
+#
+# Just because we've finished pushing all of our replay logs doesn't mean we're done. Wait here until we've confirmed
+# the queue has been fully drained.
+#
+
+set -e
+set -u
+
+LENGTH=100000000
+THRESHOLD="${1:-0}"
+
+while [ $LENGTH -gt $THRESHOLD ] ; do
+  sleep 5
+  
+  LENGTH=$( ( printf "LLEN logstash\r\nQUIT\r\n" ; sleep 1 ) | nc "${MVTJ_QUEUE_0}" 6379 | tr -d -C '[:digit:]' )
+done

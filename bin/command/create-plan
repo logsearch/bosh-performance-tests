@@ -1,0 +1,80 @@
+#!/usr/bin/env ruby
+
+#
+# look at a directory and create the test plans
+#
+# args: suite-template-dir suite-output-dir
+
+require 'yaml'
+require 'fileutils'
+require 'shellwords'
+
+config = YAML.load File.read("#{ARGV[0]}/config.yml")
+
+def recursemv(knowns, unknowns, found)
+  if knowns.keys.length == unknowns.keys.length
+    return [ knowns ]
+  end
+
+  unknowns.each do | key, values |
+    if found.has_key? key
+      next
+    end
+
+    multivariates = []
+
+    myfound = found.clone
+    myfound[key] = true
+    
+    values.each do | value |
+      myknowns = knowns.clone
+      myknowns[key] = value
+      
+      multivariates.concat recursemv(myknowns, unknowns, myfound)
+      
+      traversed = true
+    end
+    
+    return multivariates
+  end
+end
+
+def envdump prefix, hashful, fh
+  hashful.each do | key, value |
+    if value.class == Hash
+      envdump "#{prefix}#{key}_", value, fh
+    else
+      ekey = "#{prefix}#{key}".upcase
+      fh.write("export #{ekey}=#{Shellwords.escape(value)}\n")
+    end
+  end
+end
+
+multivariates = recursemv({}, config['variables'], {})
+
+FileUtils.mkdir_p "#{ARGV[1]}"
+
+multivariates.each_with_index do | variables, scenario |
+  for trial in 1..config['trials']
+    targetdir = "#{ARGV[1]}/scenario#{scenario+1}/trial#{trial}"
+
+    FileUtils.mkdir_p targetdir
+    FileUtils.cp_r Dir.glob("#{ARGV[0]}/*"), targetdir
+    FileUtils.cp_r Dir.glob("./bin/*"), "#{targetdir}/bin"
+  
+    myconfig = config.clone
+    myconfig['variables'] = variables
+    myconfig['settings']['bosh'] ||= {}
+    myconfig['settings']['bosh']['deployment_name'] = "#{myconfig['settings']['bosh']['deployment_prefix']||File.basename(ARGV[1])}-scenario#{scenario+1}-trial#{trial}"
+  
+    YAML.dump myconfig, File.open("#{targetdir}/config.yml", 'w')
+  
+    envdump 'MVTV_', myconfig['variables'], File.open("#{targetdir}/env/00-variables", 'w')
+    envdump 'MVTS_', myconfig['settings'], File.open("#{targetdir}/env/00-settings", 'w')
+  end
+end
+
+File.write("#{ARGV[1]}/manifest.json", JSON.generate({
+  "scenarios" => scenarios.length,
+  "traisl" => config['trials'],
+}))

@@ -1,0 +1,260 @@
+<html>
+  <head>
+    <title>gather-stats viewer</title>
+    <script src="//ajax.googleapis.com/ajax/libs/mootools/1.4.5/mootools-yui-compressed.js"></script>
+    <script src="//code.highcharts.com/adapters/mootools-adapter.js"></script>
+    <script src="//code.highcharts.com/highcharts.js"></script>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/moment.js/2.10.2/moment.min.js"></script>
+    <script src="./src/MvtDatasource.js"></script>
+    <script src="./src/DatasourceFactory.js"></script>
+    <script src="./src/SeriesBuilder.js"></script>
+    <script src="./src/SeriesBucket.js"></script>
+    <script src="./src/SeriesRef.js"></script>
+    <script src="./src/SeriesSynchronousTransform.js"></script>
+    <script src="./src/HighchartsGraph.js"></script>
+    <script src="./src/functions.js"></script>
+    
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css">
+    
+    <style type="text/css">
+      .graphit {
+        height: 343px;
+        margin-bottom: 30px;
+      }
+      
+      .graphit pre {
+        font-size: 11px;
+        height: 343px;
+        overflow: hidden;
+        white-space: pre;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="page-header">
+        <h1>Graph Presets</h1>
+      </div>
+
+
+      <div data-if-metric="host.cpu_0.cpu_idle">
+        <h3>CPU</h3>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div id="host_cpu" class="graphit"><pre>{"title":{"text":"CPU"},"yAxis":{"title":{"enabled":false}}}
+stacked(alias(sum(series(/host\.cpu_\d+\.cpu_idle/)), 'Idle'))
+stacked(alias(sum(series(/host\.cpu_\d+\.cpu_interrupt/)), 'Interrupt'))
+stacked(alias(sum(series(/host\.cpu_\d+\.cpu_nice/)), 'Nice'))
+stacked(alias(sum(series(/host\.cpu_\d+\.cpu_softirq/)), 'IRQ (soft)'))
+stacked(alias(sum(series(/host\.cpu_\d+\.cpu_steal/)), 'Steal'))
+stacked(alias(sum(series(/host\.cpu_\d+\.cpu_system/)), 'System'))
+stacked(alias(sum(series(/host\.cpu_\d+\.cpu_user/)), 'User'))
+stacked(alias(sum(series(/host\.cpu_\d+\.cpu_wait/)), 'Wait'))</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="loadavg" class="graphit"><pre>{"title":{"text":"Load Average"},"yAxis":{"title":{"enabled":false}}}
+aliasSub(series(/host\.load\.load\..*/), 'host.load.load.', '')</pre></div>
+          </div>
+        </div>
+      </div>
+
+      <div data-if-metric="host.memory.memory_used">
+        <h3>RAM</h3>
+  
+        <div class="row">
+          <div class="col-md-6">
+            <div id="host_memory" class="graphit"><pre>{"title":{"text":"Memory"}}
+stacked(aliasSub(series(/host\.memory\.memory_.+/), 'host.memory.memory_', ''))</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="host_memory" class="graphit"><pre>{"title":{"text":"Swap"}}
+stacked(aliasSub(series(/host\.swap\.swap_.+/), 'host.swap.swap_', ''))</pre></div>
+          </div>
+        </div>
+      </div>
+
+      <div data-if-metric="host.interface_eth0.if_octets.tx">
+        <h3>Network (eth0)</h3>
+  
+        <div class="row">
+          <div class="col-md-6">
+            <div id="network_eth0_octets" class="graphit"><pre>{"title":{"text":"Bytes"},"yAxis":{"title":{"enabled":false}}}
+alias(series('host.interface_eth0.if_octets.tx'), 'Transmitted')
+alias(scale(series('host.interface_eth0.if_octets.rx'), -1), 'Received')</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="network_eth0_packets" class="graphit"><pre>{"title":{"text":"Packets"},"yAxis":{"title":{"enabled":false}}}
+alias(series('host.interface_eth0.if_packets.tx'), 'Transmitted')
+alias(scale(series('host.interface_eth0.if_packets.rx'), -1), 'Received')</pre></div>
+          </div>
+        </div>
+      </div>
+  
+      <div data-if-metric="host.interface_lo.if_octets.tx">
+        <h3>Network (lo)</h3>
+  
+        <div class="row">
+          <div class="col-md-6">
+            <div id="network_lo_octets" class="graphit"><pre>{"title":{"text":"Bytes"},"yAxis":{"title":{"enabled":false}}}
+alias(series('host.interface_lo.if_octets.tx'), 'Transmitted')
+alias(scale(series('host.interface_lo.if_octets.rx'), -1), 'Received')</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="network_lo_packets" class="graphit"><pre>{"title":{"text":"Packets"},"yAxis":{"title":{"enabled":false}}}
+alias(series('host.interface_lo.if_packets.tx'), 'Transmitted')
+alias(scale(series('host.interface_lo.if_packets.rx'), -1), 'Received')</pre></div>
+          </div>
+        </div>
+      </div>
+
+      <div data-if-metric="host.disk_xvda.disk_octets.read">
+        <h3>Disk (system)</h3>
+    
+        <div class="row">
+          <div class="col-md-6">
+            <div id="disk_xvda_octets" class="graphit"><pre>{"title":{"text":"Bytes"},"yAxis":{"title":{"enabled":false}}}
+alias(series('host.disk_xvda.disk_octets.read'), 'Bytes Read')
+alias(scale(series('host.disk_xvda.disk_octets.write'), -1), 'Bytes Written')</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="disk_xvda_time" class="graphit"><pre>{"title":{"text":"Time Spent"},"yAxis":{"title":{"text":"Milliseconds"}}}
+alias(series('host.disk_xvda.disk_time.read'), 'Read')
+alias(scale(series('host.disk_xvda.disk_time.write'), -1), 'Written')</pre></div>
+          </div>
+        </div>
+    
+        <div class="row">
+          <div class="col-md-6">
+            <div id="disk_xvda_aws_idletime" class="graphit"><pre>{"title":{"text":"AWS Idle Time"},"yAxis":{"title":{"enabled":false}}}
+alias(series('aws.volume.xvda.idle_time.average'), 'Average')</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="disk_xvda_aws_queuelength" class="graphit"><pre>{"title":{"text":"AWS Queue Length"},"yAxis":{"title":{"enabled":false}}}
+alias(series('aws.volume.xvda.queue_length.average'), 'Average')</pre></div>
+          </div>
+        </div>
+      </div>
+
+      <div data-if-metric="host.disk_xvdf.disk_octets.read">
+        <h3>Disk (persistent)</h3>
+    
+        <div class="row">
+          <div class="col-md-6">
+            <div id="disk_xvdf_octetsops" class="graphit"><pre>{"title":{"text":"Bytes/Ops"},"yAxis":[{"title":{"text":"Bytes"}},{"title":{"text":"Operations"}}]}
+alias(series('host.disk_xvdf.disk_octets.read'), 'Bytes Read')
+alias(scale(series('host.disk_xvdf.disk_octets.write'), -1), 'Bytes Written')</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="disk_xvdf_time" class="graphit"><pre>{"title":{"text":"Time Spent"},"yAxis":{"title":{"text":"Milliseconds"}}}
+alias(series('host.disk_xvdf.disk_time.read'), 'Read')
+alias(scale(series('host.disk_xvdf.disk_time.write'), -1), 'Written')</pre></div>
+          </div>
+        </div>
+    
+        <div class="row">
+          <div class="col-md-6">
+            <div id="disk_xvdf_aws_idletime" class="graphit"><pre>{"title":{"text":"AWS Idle Time"},"yAxis":{"title":{"enabled":false}}}
+alias(series('aws.volume.xvdf.idle_time.average'), 'Average')</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="disk_xvdf_aws_queuelength" class="graphit"><pre>{"title":{"text":"AWS Queue Length"},"yAxis":{"title":{"enabled":false}}}
+alias(series('aws.volume.xvdf.queue_length.average'), 'Average')</pre></div>
+          </div>
+        </div>
+      </div>
+
+      <div data-if-metric="logsearch.parse_count">
+        <h3>Parser</h3>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div id="logsearch_parser_count" class="graphit"><pre>{"title":{"text":"Message Count"},"yAxis":{"title":{"enabled":false}}}
+alias(series('logsearch.parse_count'), 'Messages')</pre></div>
+          </div>
+        </div>
+      </div>
+
+      <div data-if-metric="elasticsearch.jvm.gc.collectors.old.collection_time_in_millis">
+        <h3>Elasticsearch JVM</h3>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div id="elasticsearch_jvm_gc_old" class="graphit"><pre>{"title":{"text":"GC Old"},"yAxis":[{"title":{"text":"Milliseconds"}},{"title":{"text":"Count"}}]}
+alias(derivative(series('elasticsearch.jvm.gc.collectors.old.collection_time_in_millis')), 'Time')
+alias(secondYAxis(derivative(series('elasticsearch.jvm.gc.collectors.old.collection_count'))), 'Count')</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="elasticsearch_jvm_gc_young" class="graphit"><pre>{"title":{"text":"GC Young"},"yAxis":[{"title":{"text":"Milliseconds"}},{"title":{"text":"Count"}}]}
+alias(derivative(series('elasticsearch.jvm.gc.collectors.young.collection_time_in_millis')), 'Time')
+alias(secondYAxis(derivative(series('elasticsearch.jvm.gc.collectors.young.collection_count'))), 'Count')</pre></div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div id="elasticsearch_jvm_threads" class="graphit"><pre>{"title":{"text":"Threads"},"yAxis":{"title":{"enabled":false}}}
+alias(series('elasticsearch.jvm.threads.count'), 'Threads')</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="elasticsearch_jvm_mem" class="graphit"><pre>{"title":{"text":"Memory Used"}}
+alias(stacked(series('elasticsearch.jvm.mem.heap_used_in_bytes')), 'Heap')
+alias(stacked(series('elasticsearch.jvm.mem.non_heap_used_in_bytes')), 'Non-Heap')</pre></div>
+          </div>
+        </div>
+
+        <h3>Elasticsearch Indexing</h3>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div id="elasticsearch_index_docs" class="graphit"><pre>{"title":{"text":"Documents"}}
+alias(series('elasticsearch.indices.docs.count'), 'Count')
+alias(secondYAxis(derivative(series('elasticsearch.indices.docs.count'))), 'Derivative')</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="elasticsearch_index_flush" class="graphit"><pre>{"title":{"text":"Flushes"},"yAxis":[{"title":{"text":"Milliseconds"}},{"title":{"text":"Count"}}]}
+alias(derivative(series('elasticsearch.indices.flush.total_time_in_millis')), 'Time')
+alias(secondYAxis(derivative(series('elasticsearch.indices.flush.total'))), 'Count')</pre></div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div id="elasticsearch_index_merges" class="graphit"><pre>{"title":{"text":"Flush"},"yAxis":[{"title":{"text":"Milliseconds"}},{"title":{"text":"Count"}}]}
+alias(derivative(series('elasticsearch.indices.merges.total_time_in_millis')), 'Time')
+alias(secondYAxis(derivative(series('elasticsearch.indices.merges.total'))), 'Count')</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="elasticsearch_index_refresh" class="graphit"><pre>{"title":{"text":"Refresh"},"yAxis":[{"title":{"text":"Milliseconds"}},{"title":{"text":"Count"}}]}
+alias(derivative(series('elasticsearch.indices.refresh.total_time_in_millis')), 'Time')
+alias(secondYAxis(derivative(series('elasticsearch.indices.refresh.total'))), 'Count')</pre></div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="col-md-6">
+            <div id="elasticsearch_index_store_throttle" class="graphit"><pre>{"title":{"text":"Throttle Time"},"yAxis":{"title":{"enabled":false}}}
+alias(derivative(series('elasticsearch.indices.store.throttle_time_in_millis')), 'Time')</pre></div>
+          </div>
+          <div class="col-md-6">
+            <div id="elasticsearch_index_store_size" class="graphit"><pre>{"title":{"text":"Store Size"},"yAxis":{"title":{"enabled":false}}}
+alias(derivative(series('elasticsearch.indices.store.size_in_bytes')), 'Bytes')</pre></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </body>
+
+  <script>
+    if (1 < window.location.hash.length) {
+      var datasource = new MvtDatasource(window.location.hash.substring(1));
+    } else {
+      var datasource = new MvtDatasource('compare-flush-size/scenario3/trial1/metrics/elasticsearch-0.data');
+    }
+
+    var s = new SeriesBuilder(datasource);
+
+    createDomBasedGraphs($$('.graphit'), s);
+  </script>
+</html>

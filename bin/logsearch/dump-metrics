@@ -1,0 +1,170 @@
+#!/usr/bin/env ruby
+
+#
+# dump all the metrics gathered from the deployment
+#
+
+require 'net/http'
+require 'json'
+require 'date'
+require 'time'
+
+def search(payload)
+  now = Time.now.utc
+    
+  req = Net::HTTP::Post.new("/logstash-#{now.strftime('%Y.%m.%d')},logstash-#{(now - 86400).strftime('%Y.%m.%d')}/metric/_#{if payload.class == Array then 'm' end}search")
+  srv = ENV['MVTS_LOGSEARCH_API'].split(':')
+  
+  if payload.class == Array
+    req.body = payload.map { | v | JSON.generate v }.join("\n") + "\n"
+  else
+    req.body = JSON.generate payload
+  end
+    
+  res = Net::HTTP.new(srv[0], srv[1]).start { | http | http.request(req) }
+  
+  JSON.parse res.body
+end
+
+aggregated = search({
+  "aggregations" => {
+    "metric" => {
+      "terms" => {
+        "field" => "name",
+        "size" => 8192,
+        "order" => {
+          "_term" => "asc"
+        }
+      },
+      "aggregations" => {
+        "job" => {
+          "terms" => {
+            "field" => "@source.bosh_job",
+            "size" => 1024,
+            "order" => {
+              "_term" => "asc"
+            }
+          }
+        }
+      }
+    }
+  },
+  "query" => {
+    "filtered" => {
+      "filter" => {
+        "and" => [
+          {
+            "term" => {
+              "@source.bosh_deployment" => ENV['MVTS_BOSH_DEPLOYMENT_NAME']
+            }
+          },
+          {
+            "range" => {
+              "@timestamp" => {
+                "gte" => ENV['MVTT_START'],
+                "lt" => ENV['NVTT_STOP']
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "size" => 0
+})
+
+filehandles = {}
+
+aggregated['aggregations']['metric']['buckets'].each do | metric |
+  $stdout.print "#{metric['key']}"
+
+  msearchreq = []
+
+  metric['job']['buckets'].each do | job |
+    msearchreq.push({})
+    msearchreq.push({
+      "_source" => [
+        "@timestamp",
+        "value"
+      ],
+      "query" => {
+        "filtered" => {
+          "filter" => {
+            "and" => [
+              {
+                "term" => {
+                  "@source.bosh_deployment" => ENV['MVTS_BOSH_DEPLOYMENT_NAME']
+                }
+              },
+              {
+                "term" => {
+                  "name" => metric['key']
+                }
+              },
+              {
+                "term" => {
+                  "@source.bosh_job" => job['key']
+                }
+              },
+              {
+                "range" => {
+                  "@timestamp" => {
+                    "gte" => ENV['MVTT_START'],
+                    "lt" => ENV['NVTT_END'],
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "size" => 8192,
+      "sort" => {
+        "@timestamp" => "asc"
+      }
+    })
+  end
+  
+  msearchres = search(msearchreq)
+
+  metric['job']['buckets'].each_with_index do | job, idx |
+    $stdout.print " -> #{job['key']}"
+    
+    if not filehandles.has_key? job['key']
+      filehandles[job['key']] = File.open("metrics/#{job['key'].gsub(/\//, '-')}.data", 'w')
+    end
+    
+    response = msearchres['responses'][idx]
+    
+    lasttime = 0
+    lastvalue = nil
+
+    result = response['hits']['hits'].map do | metric |
+      newtime = Time.iso8601(metric['_source']['@timestamp']).to_i
+      newvalue = metric['_source']['value']
+
+      difftime = newtime - lasttime
+      retval = nil
+
+      if newvalue === lastvalue
+        retval = difftime
+      else
+        retval = "#{difftime}:#{newvalue}"
+      end
+
+      lasttime = newtime
+      lastvalue = newvalue
+
+      retval
+    end
+
+    filehandles[job['key']].write "#{metric['key']} #{result.join(';')}\n"
+    filehandles[job['key']].flush
+  end
+  
+  $stdout.print "\n"
+end
+
+filehandles.each_value do | filehandle |
+  filehandle.close
+end

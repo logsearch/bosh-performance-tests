@@ -1,0 +1,44 @@
+#!/usr/bin/env ruby
+
+require 'json'
+require 'time'
+
+cloudwatch = JSON.parse $stdin.read
+
+def mname(scope, name)
+  res = "#{scope}.#{name}"
+  res = res.gsub('CPUU', 'CPU_U')
+  res = res.gsub(/([a-z])([A-Z])/, '\1_\2').downcase
+  res = res.gsub('.volume_', '.')
+  res = res.gsub('volume.sd', 'volume.xvd')
+  
+  res
+end
+
+[ 'Average', 'Maximum', 'Minimum', 'Sum' ].each do | metricname |
+  lasttime = 0
+  lastvalue = nil
+
+  result = cloudwatch['Datapoints']
+    .sort { | a, b | a['Timestamp'] <=> b['Timestamp'] }
+    .map { | metric |
+      newtime = Time.iso8601(metric['Timestamp']).to_i
+      newvalue = metric[metricname]
+
+      difftime = newtime - lasttime
+      retval = nil
+
+      if newvalue === lastvalue
+        retval = difftime
+      else
+        retval = "#{difftime}:#{newvalue}"
+      end
+
+      lasttime = newtime
+      lastvalue = newvalue
+
+      retval
+    }
+  
+  $stdout.puts "#{mname(ARGV[0], metricname)} #{result.join(';')}\n"
+end

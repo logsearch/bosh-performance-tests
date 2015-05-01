@@ -1,0 +1,10 @@
+#!/bin/bash
+
+#
+# delay the process
+#
+
+set -e
+set -u
+
+sleep "${1}"

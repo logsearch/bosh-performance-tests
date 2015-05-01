@@ -1,0 +1,47 @@
+#!/usr/bin/env ruby
+
+#
+# dump the list of vm jobs/indices and their current IP address
+#
+
+fh = File.open("env/#{ARGV[0] || 50}-vms", 'w')
+
+vms = `bosh -c "#{ENV['BOSH_CONFIG']||'.bosh_config'}" vms --details #{ENV['MVTS_BOSH_DEPLOYMENT_NAME']}`
+
+lastjob = nil
+foundips = {}
+foundcids = {}
+
+vms.split("\n").each do | line |
+  line.match(/^\|\s(.+)\s\|$/m) do | match |
+    cols = match[1].split("|")
+  
+    job = cols[0].strip
+
+    if "Job/index" == job then
+      next
+    elsif "" == job
+      job = lastjob
+    else
+      foundcids[job] = cols[4].strip
+    end
+
+    foundips[job] ||= []
+    foundips[job].push cols[3].strip
+    
+    lastjob = job
+  end
+end
+
+foundips.each do | job, ips |
+  # avoid pubilc ips which are generally first; lazy
+  ips.reverse!
+  
+  fh.write "export MVTJ_#{job.gsub(/-/, '_').gsub(/\//, '_').upcase}=#{ips[0]}\n"
+end
+
+foundcids.each do | job, cid |
+  fh.write "export MVTJ_#{job.gsub(/-/, '_').gsub(/\//, '_').upcase}_CID=#{cid}\n"
+end
+
+fh.close

@@ -1,0 +1,42 @@
+#!/bin/bash
+
+#
+# This pulls down some of the files that we've archived from our live deployment to replay them in a
+# parse-as-fast-as-you-can approach for stress testing. For larger tests, we found we needed multiple ingestors running
+# to make sure the queue stayed full so this will self-fork.
+#
+
+set -e
+set -u
+
+if [ "${1:-}" == "" ] ; then
+  # the job count here is hard-coded; should probably add $MVTJ_INGESTOR_ARCHIVER_COUNT to vms-env generator
+  seq 0 1 | xargs -n 1 -P 2 ./bin/push-test-logs
+  
+  exit $?
+fi
+
+VREF="MVTJ_INGESTOR_ARCHIVER_${1}"
+eval IP=\$$VREF
+
+while read LINE ; do
+  IFS=':' read -ra S3_REF <<< "$LINE"
+  S3_BUCKET="${S3_REF[0]}"
+  S3_FILE="${S3_REF[1]}"
+
+  S3GO_EXPIRES=$( date -u -d '+5 minutes' +"%s" )
+  S3GO_SIGNATURE=$( echo -en "GET\n\n\n${S3GO_EXPIRES}\n/${S3_BUCKET}/${S3_FILE}" | openssl sha1 -hmac "${AWS_SECRET_ACCESS_KEY}" -binary | openssl enc -e -base64 | sed 's/+/%2B/g' )
+  S3GO_URL="https://${S3_BUCKET}.s3.amazonaws.com/${S3_FILE}?AWSAccessKeyId=${AWS_ACCESS_KEY_ID}&Expires=${S3GO_EXPIRES}&Signature=${S3GO_SIGNATURE}"
+
+  echo "--> ${LINE}"
+  ssh -q -i "${VCAP_SSHKEY}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "vcap@${IP}" <<INGESTOR
+set -e
+wget -qO /tmp/backfill.xz '${S3GO_URL}'
+echo '${VCAP_PASS}' | sudo -p '' -S /var/vcap/jobs/ingestor_archiver/bin/reload /tmp/backfill.xz
+sleep 15
+echo '${VCAP_PASS}' | sudo -p '' -S /var/vcap/jobs/ingestor_archiver/bin/wait-until-loaded
+INGESTOR
+  
+  # wait for the queue to get back to a reasonable level before continuing
+  ./bin/wait-for-queue 2000000
+done < "etc/restore-files-${1}.list"

@@ -1,0 +1,4 @@
+{
+    "template" : "logstash-*",
+    "order" : 50
+}
