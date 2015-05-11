@@ -1,0 +1,27 @@
+trials: 3
+variables: {}
+settings:
+  logsearch:
+    api: api.logsearch.example.com:9200
+    ingestor: ingestor.logsearch.example.com:443
+    ssl_ca_certificate: |
+      -----BEGIN CERTIFICATE-----
+      ...snip...
+      -----END CERTIFICATE-----
+steps:
+  - bosh: deploy
+  - custom: put-elasticsearch-template
+  - util: timer-mark
+    args: start
+  - util: sleep
+    args: 360
+  - custom: push-test-logs
+  - custom: wait-for-queue
+  - util: sleep
+    args: 360
+  - util: timer-mark
+    args: stop
+  - logsearch: dump-metrics
+  - custom: dump-custom-metrics
+  - aws: dump-metrics
+  - bosh: destroy

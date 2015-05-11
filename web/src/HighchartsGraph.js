@@ -20,6 +20,7 @@ HighchartsGraph.prototype.render = function () {
   var options = Object.clone(this.options);
   options.chart = options.chart || {};
   options.chart.renderTo = this.target;
+  options.chart.zoomType = options.chart.zoomType || 'x';
 
   options.credits = options.credits || {};
   options.credits.enabled = false;

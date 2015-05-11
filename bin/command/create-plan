@@ -5,6 +5,7 @@
 #
 # args: suite-template-dir suite-output-dir
 
+require 'json'
 require 'yaml'
 require 'fileutils'
 require 'shellwords'
@@ -59,6 +60,7 @@ multivariates.each_with_index do | variables, scenario |
     targetdir = "#{ARGV[1]}/scenario#{scenario+1}/trial#{trial}"
 
     FileUtils.mkdir_p targetdir
+    FileUtils.mkdir_p "#{targetdir}/metrics"
     FileUtils.cp_r Dir.glob("#{ARGV[0]}/*"), targetdir
     FileUtils.cp_r Dir.glob("./bin/*"), "#{targetdir}/bin"
   
@@ -75,6 +77,6 @@ multivariates.each_with_index do | variables, scenario |
 end
 
 File.write("#{ARGV[1]}/manifest.json", JSON.generate({
-  "scenarios" => scenarios.length,
-  "traisl" => config['trials'],
+  "scenarios" => multivariates.length,
+  "trials" => config['trials'],
 }))

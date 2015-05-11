@@ -1,0 +1,100 @@
+---
+name: "<%= ENV['MVTS_BOSH_DEPLOYMENT_NAME'] %>"
+director_uuid: "<%= ENV['BOSH_DIRECTOR_UUID'] %>"
+releases:
+  - name: "logsearch"
+    version: "latest"
+compilation:
+  workers: 1
+  network: "default"
+  reuse_compilation_vms: true
+  cloud_properties: 
+    availability_zone: "eu-west-1c"
+    instance_type: "c3.large"
+update:
+  canaries: 1
+  canary_watch_time: "30000-120000"  # 30sec min -> 2min max 
+  update_watch_time: "30000-120000"
+  max_in_flight: 4
+  max_errors: 1
+networks:
+  - name: "default"
+    type: "manual"
+    subnets:
+      - range: "10.12.42.64/26" # -]10.12.42.127
+        name: "default"
+        static:
+          # redis is reserved so parsers know who to talk to
+          - "10.12.42.65"
+        cloud_properties:
+          security_groups:
+            - "meta-logsearch-io-VPC-40F9XUFXHOY2-SecuritygroupInternalAll-1C80BXBZOZTHC"
+          subnet: "subnet-afb2b8e9"
+resource_pools:
+  - name: "standalone"
+    network: "default"
+    size: 1
+    stemcell:
+      name: "bosh-aws-xen-ubuntu-trusty-go_agent-hvm"
+      version: "latest"
+    cloud_properties:
+      availability_zone: "eu-west-1c"
+      instance_type: "c4.large"
+  - name: "ingestor_archiver"
+    network: "default"
+    size: 1
+    stemcell:
+      name: "bosh-aws-xen-ubuntu-trusty-go_agent-hvm"
+      version: "latest"
+    cloud_properties:
+      availability_zone: "eu-west-1c"
+      instance_type: "c3.xlarge"
+disk_pools:
+  - name: "standalone"
+    disk_size: 16384
+jobs:
+  - name: "standalone"
+    templates: 
+      - release: "logsearch"
+        name: "queue"
+      - release: "logsearch"
+        name: "log_parser"
+      - release: "logsearch"
+        name: "elasticsearch"
+    instances: 1
+    resource_pool: "standalone"
+    persistent_disk_pool: "standalone"
+    networks:
+      - name: "default"
+        static_ips:
+          - "10.12.42.65"
+  - name: "ingestor_archiver"
+    templates: 
+      - release: "logsearch"
+        name: "ingestor_archiver"
+    instances: 1
+    resource_pool: "ingestor_archiver"
+    networks:
+      - name: "default"
+properties: 
+  elasticsearch:
+    cluster_name: "logsearch-perftest"
+    host: "127.0.0.1"
+    discovery:
+      minimum_master_nodes: 1
+  redis:
+    host: "10.12.42.65"
+    key: "logstash"
+  logstash:
+    metadata_level: "DEBUG"
+  logstash_parser:
+    use_local_elasticsearch: false
+    filters: |
+            <%= File.read('etc/logstash-filters.conf').gsub(/^/, '            ').strip %>
+apply_spec:
+  properties:
+    ntp:
+      - "0.europe.pool.ntp.org"
+      - "1.europe.pool.ntp.org"
+      - "2.europe.pool.ntp.org"
+      - "3.europe.pool.ntp.org"

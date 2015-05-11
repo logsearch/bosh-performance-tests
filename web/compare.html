@@ -196,7 +196,7 @@
             var m = 1 != tm.length ? ('group(' + tm.join(', ') + ')') : tm;
 
             if (derivative.checked) {
-              m = 'derivative(' + m + ')';
+              m = 'nonNegativeDerivative(' + m + ')';
             }
         
             m = 'color(' + m + ', "' + scenariocolor + '")';

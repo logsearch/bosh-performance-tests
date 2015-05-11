@@ -1,0 +1,38 @@
+{
+    "template" : "logstash-*",
+    "order" : 50,
+    "settings" : {
+        "number_of_shards" : 4,
+        "number_of_replicas" : 1,
+        "index" : {
+            "search" : {
+                "slowlog" : {
+                    "threshold" : {
+                        "query" : {
+                            "warn" : "15s",
+                            "trace" : "500ms",
+                            "debug" : "5s",
+                            "info" : "10s"
+                        }
+                    }
+                }
+            },
+            "index_concurrency" : 16,
+            "translog" : {
+              "flush_threshold_size" : "512mb"
+            },
+            "query" : {
+                "default_field" : "@message"
+            },
+            "store" : {
+                "compress" : {
+                    "stored" : true,
+                    "tv": true
+                }
+            }
+        }
+    },
+    "mappings": {
+        "_default_": {}
+    }
+}

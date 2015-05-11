@@ -1,0 +1,3 @@
+#
+# We specify our BOSH environment variables here, along with the VCAP variables used for directly logging into the jobs.
+#

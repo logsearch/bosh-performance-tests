@@ -1,0 +1,81 @@
+#!/usr/bin/env ruby
+
+#
+# Our configuration enabled the additional logsearch metadata so we can track messages through the ingestors and
+# parsers. This gathers those stats from our test deployment and records the rate we were parsing messages, both
+# globally and per parser.
+#
+
+require 'net/http'
+require 'json'
+require 'time'
+
+def search(payload)
+  req = Net::HTTP::Post.new('/_all/_search')
+  req.body = payload.to_json
+  
+  res = Net::HTTP.new(ENV['MVTJ_STANDALONE_0'], 9200).start { | http | http.request(req) }
+  
+  JSON.parse res.body
+end
+
+response = search({
+  "aggregations" => {
+    "timestamp" => {
+      "date_histogram" => {
+        "field" => "@parser.timestamp",
+        "interval" => "30s"
+      }
+    },
+    "job" => {
+      "terms" => {
+        "field" => "@parser.job",
+        "size" => 1024
+      },
+      "aggregations" => {
+        "timestamp" => {
+          "date_histogram" => {
+            "field" => "@parser.timestamp",
+            "interval" => "30s"
+          }
+        }
+      }
+    }
+  },
+  "size" => 0
+})
+
+def handleagg1(aggregation, context)
+  fh = File.open("metrics/#{context}.data", 'a')
+
+  lasttime = 0
+  lastvalue = nil
+
+  result = aggregation['timestamp']['buckets'].map do | metric |
+    newtime = metric['key'].to_i / 1000
+    newvalue = metric['doc_count']
+
+    difftime = newtime - lasttime
+    retval = nil
+
+    if newvalue === lastvalue
+      retval = difftime
+    else
+      retval = "#{difftime}:#{newvalue}"
+    end
+
+    lasttime = newtime
+    lastvalue = newvalue
+
+    retval
+  end
+
+  fh.write("logsearch.parse_count #{result.join(';')}\n")
+  fh.close
+end
+
+handleagg1 response['aggregations'], 'global'
+
+response['aggregations']['job']['buckets'].each do | job |
+  handleagg1 job, job['key'].gsub(/\//, '-')
+end

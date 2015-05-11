@@ -17,8 +17,8 @@
     <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/css/bootstrap.min.css">
   </head>
   <body>
-    <div id="graphed" style="height:420px;"></div>
-    
+    <div id="graphed" style="height:320px;"></div>
+    <hr style="margin-top:0;" />
     <label for="graphit" style="padding-left:8px;">Graph Definition (cmd+enter to redraw):</label>
     <textarea id="graphit" rows="12" style="background-color:#F0F0F0;border:0;padding:8px;width:100%;"># first line is optional and allows you to customize the Highcharts options
 {"title":{"text":"CPU"},"yAxis":[{"title":{"enabled":false}}]}
@@ -51,25 +51,108 @@ stacked(alias(aggregateLine(series(/host\.cpu_\d+\.cpu_wait/), 'sum'), 'Wait'))<
 
   <script>
     if (1 < window.location.hash.length) {
-      var parts = window.location.hash.substring(1).split(';');
-      var sources = {};
+      if ('/' == window.location.hash.substring(window.location.hash.length - 1)) {
 
-      parts.forEach(function (part) {
-        part = part.split(':');
-        
-        if (3 == part.length) {
-          if ('mvt' == part[0]) {
-            sources[part[1]] = new MvtDatasource(part[2], part[1] + '.');
-          }
+        if (1 < window.location.hash.length) {
+          var base = window.location.hash.substring(1);
         } else {
-          sources['default'] = new MvtDatasource(part[0]);
+          var base = 'compare-flush-size';
         }
-      });
-      
-      if (('default' in sources) && (1 == Object.keys(sources))) {
-        var datasource = sources.default;
-      } else {
+
+        var scenarios = $('scenarios');
+
+        var config = {};
+
+        var knownmetrics = {};
+        var knownjobs = {};
+        var knownscenarios = {};
+        var manifests = [];
+        var sources = [];
+        var scenariographs = {};
+    
+        new Request.JSON({
+          url : base + '/manifest.json',
+          async : false,
+          method : 'get',
+          onSuccess : function (test) {
+            config = {
+              startMin : 99999999999,
+              stopMax : 0,
+              durationMax : 0,
+              scenarios : test.scenarios,
+              trials : test.trials
+            };
+
+            for (var scenario = 1; scenario <= test.scenarios; scenario += 1) {
+              config['s' + scenario] = {};
+
+              for (var trial = 1; trial <= config.trials; trial += 1) {
+                new Request.JSON({
+                  url : base + '/scenario' + scenario + '/trial' + trial + '/manifest.json',
+                  async : false,
+                  method : 'get',
+                  onSuccess : function (json) {
+                    json.metrics.forEach(function (v) {
+                      knownmetrics[v] = true;
+                    });
+
+                    Object.each(
+                      json.jobs,
+                      function (jobcount, jobname) {
+                        knownjobs[jobname] = true;
+
+                        for (var jobindex = 0; jobindex < jobcount; jobindex += 1) {
+                          var context = 's' + scenario + '.' + 't' + trial + '.' + jobname + '-' + jobindex;
+                          sources[context] = new MvtDatasource(base + '/scenario' + scenario + '/trial' + trial + '/metrics/' + jobname + '-' + jobindex + '.data', context + '.');
+                        }
+                      }
+                    );
+            
+                    config['s' + scenario]['t' + trial] = {};
+                    config['s' + scenario]['t' + trial].manifest = json;
+                
+                    var timerStart = moment(json.timers['start']).utc().unix();
+
+                    config.startMin = Math.min(config.startMin, timerStart);
+                    config.durationMax = Math.max(config.durationMax, moment(json.timers['stop']).utc().unix() - timerStart);
+                  }
+                }).send();
+              }
+            }
+
+            var startoffset = moment.unix(config.startMin).utc();
+            config.startMidnight = config.startMin - (startoffset.hour() * 3600) - (startoffset.minute() * 60) - startoffset.second();
+
+            for (var scenario = 1; scenario <= test.scenarios; scenario += 1) {
+              for (var trial = 1; trial <= config.trials; trial += 1) {
+                config['s' + scenario]['t' + trial].offset = (moment(config['s' + scenario]['t' + trial].manifest.timers['start']).utc().unix() - config.startMidnight) + 's';
+              }
+            }
+          }
+        }).send();
+
         var datasource = new DatasourceFactory(sources);
+      } else {
+        var parts = window.location.hash.substring(1).split(';');
+        var sources = {};
+
+        parts.forEach(function (part) {
+          part = part.split(':');
+        
+          if (3 == part.length) {
+            if ('mvt' == part[0]) {
+              sources[part[1]] = new MvtDatasource(part[2], part[1] + '.');
+            }
+          } else {
+            sources['default'] = new MvtDatasource(part[0]);
+          }
+        });
+      
+        if (('default' in sources) && (1 == Object.keys(sources))) {
+          var datasource = sources.default;
+        } else {
+          var datasource = new DatasourceFactory(sources);
+        }
       }
     } else {
       var datasource = new MvtDatasource('compare-flush-size/scenario3/trial1/metrics/elasticsearch-0.data');
@@ -88,11 +171,11 @@ stacked(alias(aggregateLine(series(/host\.cpu_\d+\.cpu_wait/), 'sum'), 'Wait'))<
         
         e.preventDefault();
         
-        createGraphFromSyntax(s, 'graphed', this.value);
+        createGraphFromSyntax(s, 'graphed', this.value, config);
       }
     )
     
-    createGraphFromSyntax(s, 'graphed', $('graphit').value);
+    createGraphFromSyntax(s, 'graphed', $('graphit').value, config);
     
     var seriesdoc = $('seriesdoc');
     seriesdoc.getChildren().addEvent(

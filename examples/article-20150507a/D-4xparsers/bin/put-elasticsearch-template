@@ -1,0 +1,9 @@
+#!/bin/bash
+
+#
+# since we have a custom mapping in production, apply it to our test deployment
+#
+
+cat etc/elasticsearch-template.json \
+  | sed "s/{{ replicas }}/${MVTV_REPLICAS}/" \
+  | curl -d @- "${MVTJ_ELASTICSEARCH_0}:9200/_template/logstash-custom"

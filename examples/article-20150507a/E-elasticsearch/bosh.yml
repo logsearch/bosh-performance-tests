@@ -1,0 +1,142 @@
+---
+name: "<%= ENV['MVTS_BOSH_DEPLOYMENT_NAME'] %>"
+director_uuid: "<%= ENV['BOSH_DIRECTOR_UUID'] %>"
+releases:
+  - name: "logsearch"
+    version: "latest"
+compilation:
+  workers: 1
+  network: "default"
+  reuse_compilation_vms: true
+  cloud_properties: 
+    availability_zone: "eu-west-1c"
+    instance_type: "c3.large"
+update:
+  canaries: 1
+  canary_watch_time: "30000-120000"  # 30sec min -> 2min max 
+  update_watch_time: "30000-120000"
+  max_in_flight: 4
+  max_errors: 1
+networks:
+  - name: "default"
+    type: "manual"
+    subnets:
+      - range: "10.12.42.64/26" # -]10.12.42.127
+        name: "default"
+        static:
+          # redis is reserved so parsers know who to talk to
+          - "10.12.42.65"
+          # elasticsearch ones are reserved so they can find each other
+          - "10.12.42.70"
+          - "10.12.42.71"
+          - "10.12.42.72"
+          - "10.12.42.73"
+        cloud_properties:
+          security_groups:
+            - "meta-logsearch-io-VPC-40F9XUFXHOY2-SecuritygroupInternalAll-1C80BXBZOZTHC"
+          subnet: "subnet-afb2b8e9"
+resource_pools:
+  - name: "queue"
+    network: "default"
+    size: 1
+    stemcell:
+      name: "bosh-aws-xen-ubuntu-trusty-go_agent-hvm"
+      version: "latest"
+    cloud_properties:
+      availability_zone: "eu-west-1c"
+      instance_type: "c4.large"
+  - name: "ingestor_archiver"
+    network: "default"
+    size: 2
+    stemcell:
+      name: "bosh-aws-xen-ubuntu-trusty-go_agent-hvm"
+      version: "latest"
+    cloud_properties:
+      availability_zone: "eu-west-1c"
+      instance_type: "c3.xlarge"
+  - name: "parser"
+    network: "default"
+    size: 4
+    stemcell:
+      name: "bosh-aws-xen-ubuntu-trusty-go_agent-hvm"
+      version: "latest"
+    cloud_properties:
+      availability_zone: "eu-west-1c"
+      instance_type: "c4.2xlarge"
+  - name: "elasticsearch"
+    network: "default"
+    size: 4
+    stemcell:
+      name: "bosh-aws-xen-ubuntu-trusty-go_agent-hvm"
+      version: "latest"
+    cloud_properties:
+      availability_zone: "eu-west-1c"
+      instance_type: "c4.large"
+disk_pools:
+  - name: "queue"
+    disk_size: 16384
+  - name: "elasticsearch"
+    disk_size: 65536
+jobs:
+  - name: "queue"
+    templates: 
+      - release: "logsearch"
+        name: "queue"
+    instances: 1
+    resource_pool: "queue"
+    persistent_disk_pool: "queue"
+    networks:
+      - name: "default"
+        static_ips:
+          - "10.12.42.65"
+  - name: "ingestor_archiver"
+    templates: 
+      - release: "logsearch"
+        name: "ingestor_archiver"
+    instances: 2
+    resource_pool: "ingestor_archiver"
+    networks:
+      - name: "default"
+  - name: "parser"
+    templates:
+    - release: "logsearch"
+      name: "log_parser"
+    instances: 4
+    resource_pool: "parser"
+    networks:
+      - name: "default"
+  - name: "elasticsearch"
+    templates: 
+      - release: "logsearch"
+        name: "elasticsearch"
+    instances: 4
+    resource_pool: "elasticsearch"
+    persistent_disk_pool: "elasticsearch"
+    networks:
+      - name: "default"
+        static_ips:
+          - "10.12.42.70"
+          - "10.12.42.71"
+          - "10.12.42.72"
+          - "10.12.42.73"
+properties: 
+  elasticsearch:
+    cluster_name: "logsearch-perftest"
+    host: "10.12.42.70,10.12.42.71,10.12.42.72,10.12.42.73"
+    discovery:
+      minimum_master_nodes: 1
+  redis:
+    host: "10.12.42.65"
+    key: "logstash"
+  logstash:
+    metadata_level: "DEBUG"
+  logstash_parser:
+    filters: |
+            <%= File.read('etc/logstash-filters.conf').gsub(/^/, '            ').strip %>
+apply_spec:
+  properties:
+    ntp:
+      - "0.europe.pool.ntp.org"
+      - "1.europe.pool.ntp.org"
+      - "2.europe.pool.ntp.org"
+      - "3.europe.pool.ntp.org"
